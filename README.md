@@ -2,18 +2,18 @@
 
 Built on the upstream [foundry-samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/agent-framework/responses).
 
-> **Progress:** Step `03` of `9` — **MCP integration**  
-> ▰▰▰▱▱▱▱▱▱▱
+> **Progress:** Step `00` of `9` — **Setup**  
+> ▱▱▱▱▱▱▱▱▱▱
 
-<!-- step: 03 -->
+<!-- step: 00 -->
 
 <details>
 <summary>Workshop map</summary>
 
-- Step 00 — Setup ✅
-- Step 01 — Basic hosted agent ✅
-- Step 02 — Function tools ✅
-- **Step 03 — MCP integration**
+- **Step 00 — Setup**
+- Step 01 — Basic hosted agent
+- Step 02 — Function tools
+- Step 03 — MCP integration
 - Step 04 — Foundry Toolbox
 - Step 05 — RAG (Azure AI Search)
 - Step 06 — Skills
@@ -27,418 +27,397 @@ Built on the upstream [foundry-samples](https://github.com/microsoft-foundry/fou
 If something looks broken see [Troubleshooting](.workshop/docs/steps/00-intro.md#troubleshooting).
 
 
-# Step 3 — Plug in an MCP server for live flight search
+> **Welcome — start here.** Step 0 has no agent code. It introduces the workshop, walks you through creating your own copy of the repository, and gets your local toolchain ready so Step 1 can jump straight into building the first agent.
 
-> **Goal:** wire the **OctoTrip Flights MCP** server into TravelBuddy so it can search real flights from a public, anonymous knowledge source — while keeping the Step 2 function tools.
+## What this workshop is about
 
-## What you'll learn
+You will build a **travel assistant** that grows one capability at a time. Starting from a single hosted Foundry agent, by step 9 it will be a multi-agent travel planner with function tools, MCP integration, retrieval-augmented generation, durable workflows, and persistent memory.
 
-- What the **Model Context Protocol (MCP)** is and why hosted agents can talk to MCP servers natively
-- The difference between **function tools** (Step 2, local Python) and **MCP tools** (this step, a remote standardised server) — and why they coexist in the same agent
-- How to register a remote MCP server in code with `client.get_mcp_tool(...)` and what `approval_mode` controls
-- How the manifest declares the MCP server's configuration through environment variables
-- Why adding an MCP tool changes your code and config but **not** your deployment shape (still `resources: []`)
+The workshop is built on top of the upstream [foundry-samples](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/agent-framework/responses) and is delivered as a **GitHub template repository**: you don't edit this repo directly — you create your own copy, then advance one step at a time. Each advance rewrites the `README.md` to show the next step in place.
 
-## What's already in the repo
+## Create your own repo from this template
 
-- `travel_assistant/main.py`, `travel_assistant/tools.py`, `agent.yaml`, `agent.manifest.yaml` — carried over from Step 2 (your TravelBuddy agent with the three function tools). Nothing was deleted when you advanced; your Step 2 work is preserved.
-- The MCP settings are already listed in `.env.example` (`MCP_SERVER_LABEL`, `MCP_SERVER_URL`); this step starts using them.
+This is a **GitHub template repository**. You must create your own copy before doing anything else.
 
-In this step you make **delta-only** edits: add the MCP env vars to `.env`, add one line to `main.py` to register the MCP tool, append one sentence to TravelBuddy's instructions, and update the manifest metadata. You do **not** rewrite `main.py`, `tools.py`, or the YAML files from scratch — you add to the files you finished in Step 2.
+1. Click the green **"Use this template"** button at the top of this page → **Create a new repository**.
+2. Pick a name and owner, choose visibility (Public or Private), and click **Create repository**.
+3. The included **Initialize workshop** Action runs automatically on the first push to your new repo. It lays down the step 0 starter files into `travel_assistant/` and substitutes your owner/repo into the README's Action URLs. Wait for it to finish in the **Actions** tab of your new repo (\~30 seconds). If you don't see a run, your org may have Actions disabled by default — enable them under **Settings → Actions → General → Allow all actions**, then click **Actions → Initialize workshop → Run workflow** to run it manually. See the **"▶ Start the workshop returns 404"** entry under Troubleshooting below for the full recovery procedure.
+4. **Repo settings:** Settings → Actions → General → Workflow permissions → **Read and write permissions**. Most repos inherit this, but org-owned repos may need it set explicitly so the workshop Actions can push.
 
-## Concept (5-min read)
+> 💡 **Already in your own copy?** If the green button at the top reads "Open" rather than "Use this template", you're already in a workshop instance. Continue below.
 
-TravelBuddy already has three **function tools** (weather, local time, currency) — small Python functions that run **in-process** inside its container. That pattern is perfect for capabilities you own and can code. But some capabilities are better consumed as a **service**: a large, live data source (say, real-time flight availability) you don't want to re-implement or redeploy every time it changes. That's where MCP comes in.
+## Open your repo
 
-The **Model Context Protocol (MCP)** is an open standard for connecting AI applications to external tools, data, and prompts. An **MCP server** exposes a set of capabilities (tools, resources, prompts) over a standard protocol; an **MCP client** (here, your hosted agent) connects to that server, discovers what it offers, and calls it when useful. Because the protocol is standardised, the same client can talk to *any* compliant server — GitHub, a database gateway, a docs service — without custom glue for each one.
+Pick one of the two paths — the rest of the workshop works the same either way.
 
-The key contrast with Step 2:
+### Option A — GitHub Codespaces (recommended)
 
-| | Function tools (Step 2) | MCP tools (this step) |
-| --- | --- | --- |
-| Where the code runs | In-process, in your container | On a **remote** MCP server |
-| Who owns it | You (your Python) | The server operator (here, OctoTrip) |
-| How it's registered | Pass the function in `tools=[...]` | `client.get_mcp_tool(name=..., url=...)` |
-| Tool schema | Inferred from type hints + docstring | Streamed from the server at connect time |
-| Evolves without redeploy | No — you edit and redeploy | Yes — the server can add/update tools |
+In your new repo, click **Code → Codespaces → Create codespace on `main`**. The first build takes ~2 minutes; after that the included devcontainer has everything pre-installed:
 
-Crucially, **from the model's point of view they are all just tools.** The same tool-calling loop from Step 2 applies: the model sees the available tools (local *and* remote), decides which to call, the framework runs the call, and the result flows back into the answer. A single hosted agent can connect to many MCP servers at once, and the model picks the right capability per question.
+- Python 3.12, `az` CLI (with Bicep), `azd` CLI, `uv`, `git`, `gh`, Node.js, GitHub Copilot CLI (`copilot`)
+- VS Code extensions: **Python**, **Pylance**, **Python Debugger**, **Foundry Toolkit**, **Bicep**, **Azure MCP Server (Azure Skills)**, **YAML**, **GitHub Pull Requests**
+- The **Azure Skills** plugin for the GitHub Copilot CLI is installed (its Azure MCP + Foundry MCP tools require `az login` at use time)
+- The post-create step has already created `.venv/` and installed workshop dependencies from `travel_assistant/requirements.txt` (or `.workshop/step_files/00/requirements.txt`) plus `.workshop/scripts/requirements.txt`
 
-This step points TravelBuddy at the **OctoTrip Flights MCP** server, a public, anonymous endpoint that searches live flights (routes, prices, times). Weather, time, and currency stay as local function tools (they're small and app-specific); flight search becomes an MCP tool because it's a large, live data source that OctoTrip keeps current for you.
+> ⚠️ **Wait for "Initialize workshop" to finish first.** If you create the Codespace before that Action has applied step 0, the container falls back to `.workshop/step_files/00/requirements.txt` for workshop deps. After the Action turns green, rebuild the Codespace (Command Palette → **Codespaces: Rebuild Container**) so it picks up `travel_assistant/requirements.txt`.
 
-```mermaid
-flowchart LR
-    User[Traveler question] --> Agent[TravelBuddy hosted agent]
-    Agent --> Decision{Which capability?}
-    Decision -->|weather / time / currency| Local[Function tools<br/>in-process Python]
-    Decision -->|flight search| MCP[OctoTrip Flights<br/>MCP server]
-    MCP --> Docs[(Live flight<br/>availability & prices)]
-    Docs --> MCP
-    Local --> Agent
-    MCP --> Agent
-    Agent --> Answer[Answer with<br/>live flight options]
+If you go this route, **skip the "Install the tools you'll need" section** below and jump straight to **"Set up your local environment (one-time)"**.
+👉 Direct link: [Set up your local environment (one-time)](#set-up-your-local-environment-one-time)
+
+### Option B — Clone locally
+
+```bash
+git clone https://github.com/<your-owner>/<your-repo>.git
+cd <your-repo>
 ```
 
-`client.get_mcp_tool(...)` is the Agent Framework helper that turns a remote MCP server into a tool the agent can use. You give it a `name` (a stable label that identifies the server in logs and tool-call traces), a `url` (the MCP endpoint), and `approval_mode`. Setting `approval_mode="never_require"` lets the runtime call the server automatically without pausing for human approval — appropriate here because OctoTrip Flights is a read-only, public search source. For servers that mutate state (booking a flight, sending mail), you'd require approval instead.
+Then continue with **"Install the tools you'll need"** below to install Python, `az`, `azd`, and (optionally) `uv` on your machine.
 
-The upstream `03-mcp` sample connects to the **GitHub** MCP server and passes an `Authorization` header built from a `GITHUB_PAT`. This workshop uses the exact same Agent Framework pattern but points at the **anonymous** OctoTrip Flights endpoint, so no token or header is needed. (The Troubleshooting section shows the authenticated variant if you switch to a server that requires a token.)
+## Install the tools you'll need
 
-Helpful references:
+> 💡 **In a Codespace?** Skip this section — the devcontainer already installed all of these. Jump to **"Set up your local environment (one-time)"**.
 
-- [What is the Model Context Protocol (MCP)?](https://modelcontextprotocol.io/) — the open standard TravelBuddy speaks to.
-- [OctoTrip Flights MCP server](https://mcp.octotrip.app/flights) — the public, anonymous flight-search server used in this step (streamable HTTP; a single `search` tool taking `origin`, `destination`, and `departure_date`).
-- [Model Context Protocol tools in Microsoft Foundry Agents](https://learn.microsoft.com/azure/foundry/agents/how-to/tools/model-context-protocol) — how Foundry agents connect to MCP servers and what `approval_mode` controls.
-- [Using tools with an agent](https://learn.microsoft.com/agent-framework/agents/tools/function-tools) — the shared tool-calling loop that function tools and MCP tools both flow through.
-- [What are hosted agents?](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agents) — the hosted boundary your agent (and its MCP connection) runs inside.
-- [Upstream `03-mcp` hosted-agent sample](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/agent-framework/responses/03-mcp) — the sample this step is based on.
+**Prerequisites at a glance:**
 
-## Steps
+- **Azure subscription** with access to a Foundry project and a deployed model such as `gpt-4o-mini` or `gpt-4.1-mini`. See [Create a Foundry project](https://learn.microsoft.com/azure/ai-foundry/how-to/create-projects).
+- **A role that lets you *use* the project** — **`Foundry User`** (formerly *Azure AI User*) on the Foundry project. This is the least-privilege role for *using* a project — prefer it over broader roles like Owner or Contributor. If you created the project you already have at least this. Some steps assign extra roles as needed (Step 5 adds Azure AI Search roles; Step 6 reuses `Foundry User` for the Skills API and grants it to the deployed agent's identity).
+- **Python 3.10 or newer** (the devcontainer ships 3.12).
+- **Azure CLI (`az`)** — used by `DefaultAzureCredential` for local auth.
+- **Azure Developer CLI (`azd`)** with the [`microsoft.foundry` extension](https://learn.microsoft.com/azure/foundry/agents/how-to/install-cli-foundry-extensions) — used to scaffold, provision, run, and deploy hosted agents.
+- **VS Code + [Foundry Toolkit](https://marketplace.visualstudio.com/items?itemName=ms-windows-ai-studio.windows-ai-studio)** *(optional, recommended)* — UI alternative to `azd` for running, debugging, and deploying hosted agents.
+- **[GitHub Copilot CLI](https://github.com/github/copilot-cli) (`copilot`)** *(optional, recommended)* — AI-powered CLI assistant. Install with `npm install -g @github/copilot` (the devcontainer installs it automatically via the `copilot-cli` feature).
+- **[Bicep](https://learn.microsoft.com/azure/azure-resource-manager/bicep/install)** *(optional, recommended)* — infrastructure-as-code language for the `azd`-generated `infra/`. Install the CLI with `az bicep install` and the [Bicep VS Code extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-bicep) for language support.
+- **[Azure Skills](https://github.com/microsoft/azure-skills)** *(optional, recommended)* — Azure skills and MCP server configurations for AI coding assistants. In VS Code install the [Azure MCP extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azure-mcp-server); for the GitHub Copilot CLI run `/plugin marketplace add microsoft/azure-skills` then `/plugin install azure@azure-skills`. Requires **Node.js 18+** (the MCP servers run via `npx`) and an authenticated `az login` for the Azure tools.
+- **[`uv`](https://docs.astral.sh/uv/)** *(optional)* — a faster drop-in for `pip`/`venv`. Anywhere this workshop says `pip` or `python -m venv` you can use `uv pip` or `uv venv` instead.
 
-### 1. Add the MCP env vars to `.env`
+### Python 3.10+
 
-Open `.env` and add the MCP settings. They're already listed in `.env.example`; this step starts using them.
+- **Windows:**
+  ```powershell
+  winget install --id Python.Python.3.12 -e
+  ```
+- **macOS:** install from [python.org](https://www.python.org/downloads/) or `brew install python@3.12`.
+- **Linux (Ubuntu/Debian):**
+  ```bash
+  sudo apt update && sudo apt install -y python3 python3-venv python3-pip
+  ```
 
-```env
-# .env
-MCP_SERVER_LABEL=octotrip-flights
-MCP_SERVER_URL=https://mcp.octotrip.app/flights/mcp
+Verify:
+
+```bash
+python --version  # or `python3 --version`
 ```
 
-- **`MCP_SERVER_LABEL`** is a short, stable identifier for the server. It becomes the tool group name that shows up in logs and tool-call traces, so keep it predictable and avoid spaces.
-- **`MCP_SERVER_URL`** is the MCP endpoint the agent connects to.
+### Azure CLI (`az`)
 
-Keep the Foundry values (`AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME`, `WORKSHOP_RESOURCE_PREFIX`) in `.env` too. Don't add any secret for OctoTrip Flights MCP — it's public and anonymous.
+Full instructions: [Install the Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli).
 
-### 2. Register the MCP tool in `travel_assistant/main.py`
+- **Windows:**
+  ```powershell
+  winget install --id Microsoft.AzureCLI -e
+  ```
+- **macOS:**
+  ```bash
+  brew update && brew install azure-cli
+  ```
+- **Linux (Ubuntu/Debian):**
+  ```bash
+  curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+  ```
 
-Your `main.py` is already complete from Step 2 — **don't rewrite it.** There's exactly **one functional addition**: append a `client.get_mcp_tool(...)` entry to the existing `tools=[...]` list. Then add one sentence to the instructions so the model knows when to reach for flight search.
+Verify:
 
-**Keep your Step 2 imports and function tools exactly as they are.** The three function tools are still registered; you're *adding* a fourth, remote tool alongside them:
-
-```python
-    tools = [
-        get_weather,        # <-- kept from Step 2
-        get_local_time,     # <-- kept from Step 2
-        convert_currency,   # <-- kept from Step 2
-        client.get_mcp_tool(                          # <-- add this entry
-            name=os.environ["MCP_SERVER_LABEL"],
-            url=os.environ["MCP_SERVER_URL"],
-            approval_mode="never_require",
-        ),
-    ]
+```bash
+az --version
 ```
 
-Then **keep your Step 2 instructions exactly as they are** and append one MCP sentence so the model knows the flight-search capability exists:
+### Azure Developer CLI (`azd`)
 
-```python
-        instructions=(
-            # ... keep your Step 2 instructions here, unchanged ...
-            "Use the OctoTrip Flights MCP server when the traveler asks about "
-            "flights, routes, fares, or schedules; pass IATA airport codes and a "
-            "departure date (YYYY-MM-DD) — if the traveler doesn't give one, call "
-            "get_local_time and use the date part of its iso_time as today's date — "
-            "and summarize the options you find."
-        ),
-        tools=tools,        # <-- the list you just extended above
+Full instructions: [Install the Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd).
+
+- **Windows:**
+  ```powershell
+  winget install --id Microsoft.Azd -e
+  ```
+- **macOS:**
+  ```bash
+  brew tap azure/azd && brew install azd
+  ```
+- **Linux:**
+  ```bash
+  curl -fsSL https://aka.ms/install-azd.sh | bash
+  ```
+
+Verify:
+
+```bash
+azd version
 ```
 
-That's the whole code change. `client.get_mcp_tool(...)` reads the label and URL from the environment (the same values you just added to `.env`) and hands the agent a remote tool. Everything else in `main.py` — the `FoundryChatClient` setup, the three function tools, `default_options={"store": False}`, and `ResponsesHostServer(agent).run()` — is unchanged from Step 2. If you get stuck, the finished file is in [`.workshop/solutions/03-mcp/`](.workshop/solutions/03-mcp/).
+### Optional: `uv` (faster Python package manager)
 
-> **Why `os.environ[...]` and not a hardcoded URL?** Reading the label and URL from the environment keeps them out of source control and lets you point at a different MCP server (or the authenticated variant in Troubleshooting) by editing `.env` — no code change. The hosted runtime gets the same values from the manifest at deploy time.
+Full instructions: [Install `uv`](https://docs.astral.sh/uv/getting-started/installation/).
 
-### 3. Update `travel_assistant/agent.manifest.yaml`
+- **Windows:**
+  ```powershell
+  winget install --id=astral-sh.uv -e
+  ```
+- **macOS / Linux:**
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
 
-An MCP connection is made **in code** and configured through **environment variables**, so the manifest structure barely changes — same `template`, same `protocols`, and `resources` stays empty (`[]`) because no new Azure resource is needed. This step makes two kinds of edit: **metadata** (update the human-facing `description`, add an `MCP Tools` tag and an MCP entry to `tool_declarations`) and **configuration** (add the two MCP environment variables so the hosted runtime receives them).
+## Set up your local environment (one-time)
 
-Update the `description`:
+> 💡 **In a Codespace?** The devcontainer already handled the venv and the `pip install` (substeps 3 and 5 below) — but you still need to do **substeps 1, 2, 4, and 6** (`az login`, `azd auth login` + ext install, copy `.env`, run preflight). Authentication and your `.env` can't be baked into the container.
 
-```yaml
-# travel_assistant/agent.manifest.yaml
-description: >
-  TravelBuddy is an Agent Framework hosted agent with local Python function tools
-  for weather, local time, and currency, plus an OctoTrip Flights MCP connection for
-  live flight search.
-```
+1. **Sign in to Azure**:
+   ```bash
+   az login
+   ```
+   If needed, select a subscription:
+   ```bash
+   az account set -s <subscription>
+   ```
+2. **Sign in to azd and install the Foundry extension** (one-time):
+   ```bash
+   azd auth login
+   azd ext install microsoft.foundry
+   ```
+   This adds the `azd ai agent ...` subcommands used from Step 1 onward to scaffold `azure.yaml`/`infra/`, provision Foundry resources, run the agent locally, deploy, and invoke. `microsoft.foundry` is a meta-package that installs all the Foundry `azd ai` extensions — see [Install the Azure Developer CLI Foundry extensions](https://learn.microsoft.com/azure/foundry/agents/how-to/install-cli-foundry-extensions) for details. If you'd rather drive everything from VS Code, the **Foundry Toolkit** extension exposes the same operations as palette commands and a sidebar. If you have a Python virtual environment active (next substep), the Foundry Toolkit picks it up automatically when you press **F5** to debug.
+3. **Create and activate a Python virtual environment.**
 
-Extend `metadata` — add the `MCP Tools` tag and an MCP entry alongside the Step 2 `tool_declarations` (keep the three function-tool entries):
+   Pick one of the two options below. Option A uses the Python stdlib `venv` module and matches the rest of the workshop; Option B uses [`uv`](https://docs.astral.sh/uv/), which is significantly faster but requires installing `uv` first (see above). Both options create the environment at `.venv/`, so the activation commands are the same.
 
-```yaml
-metadata:
-  tags:
-    - Agent Framework
-    - AI Agent Hosting
-    - Azure AI AgentServer
-    - Responses Protocol
-    - Travel Assistant
-    - Function Tools
-    - MCP Tools           # <-- added
-  tool_declarations:
-    # ... keep the get_weather / get_local_time / convert_currency entries ...
-    - name: octotrip-flights         # <-- added: the remote MCP tool group
-      description: OctoTrip Flights MCP server for live flight search.
-      type: mcp
-      url: ${MCP_SERVER_URL}
-```
+   **Option A — `python -m venv` (default)**
+   ```bash
+   python -m venv .venv
+   ```
 
-Then add the two MCP variables to the **existing** `template.environment_variables` list (keep the Step 1/Step 2 entries):
+   **Option B — `uv venv`**
+   ```bash
+   uv venv .venv
+   ```
 
-```yaml
-template:
-  # ... name, kind, protocols unchanged ...
-  environment_variables:
-    # ... AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_MODEL_DEPLOYMENT_NAME, WORKSHOP_RESOURCE_PREFIX ...
-    - name: MCP_SERVER_LABEL         # <-- added
-      value: ${MCP_SERVER_LABEL}
-    - name: MCP_SERVER_URL           # <-- added
-      value: ${MCP_SERVER_URL}
+   Then activate it:
 
-resources: []                        # <-- unchanged: no new Azure resource
-```
+   - macOS / Linux:
+     ```bash
+     source .venv/bin/activate
+     ```
+   - Windows (PowerShell):
+     ```powershell
+     .\.venv\Scripts\Activate.ps1
+     ```
 
-`tool_declarations` is **descriptive metadata** — it documents the agent's capabilities for humans and tooling that browse the manifest. The MCP tools are still connected in code via `client.get_mcp_tool(...)`; the MCP server itself decides which concrete tools it exposes at connect time. `resources` stays `[]` because MCP adds no Azure resource — the connection is an outbound HTTPS call from the running container.
+   > 💡 **`uv` users:** activation is optional. `uv pip install`, `uv run`, and `uv` itself auto-discover `.venv/` in the current directory. If you skip activation, prefix later Python commands with `uv run` (e.g. `uv run python .workshop/scripts/preflight.py`) so they use the venv's interpreter.
+4. **Configure environment**: setup and every later step read their configuration from a repo-root `.env` file, so create it **before** running preflight — copy the template, then fill it in:
 
-### 4. Add the MCP env vars to `travel_assistant/agent.yaml`
-
-`agent.yaml` is the local hosted-agent runtime definition, so it carries its **own** environment-variable list. Add the same two MCP variables here so the **local** run (`azd ai agent run`) picks them up — the hosted `agent.yaml` and the manifest's `template` share the same environment contract, but each file declares the variables it needs:
-
-```yaml
-# travel_assistant/agent.yaml
-environment_variables:
-  # ... AZURE_AI_PROJECT_ENDPOINT, AZURE_AI_MODEL_DEPLOYMENT_NAME, WORKSHOP_RESOURCE_PREFIX ...
-  - name: MCP_SERVER_LABEL           # <-- added
-    value: ${MCP_SERVER_LABEL}
-  - name: MCP_SERVER_URL             # <-- added
-    value: ${MCP_SERVER_URL}
-```
-
-Leave the `name`, `kind`, `protocols`, and CPU/memory blocks exactly as they were. No new Azure resource is declared, so you won't need to re-provision — but because `azd ai agent init` **copied** your code and manifest into the project folder in earlier steps, you'll re-run `azd ai agent init` in the next section to refresh that copy before deploying.
-
-## Run and deploy TravelBuddy
-
-**Do you need to re-init? Yes.** In the earlier steps, `azd ai agent init` **copied** your `travel_assistant/` code into the generated `${WORKSHOP_RESOURCE_PREFIX}-travel-buddy/` project folder — that copy is the snapshot azd actually builds and deploys. Your Step 3 edits live in `travel_assistant/` (the `main.py` MCP tool line, the appended instruction, and the manifest/`agent.yaml` changes), so the copied snapshot is now **stale**. Re-run `azd ai agent init` to refresh it before you run or deploy; it re-copies the current `travel_assistant/` code and re-reads the updated `agent.manifest.yaml`.
-
-You do **not** need `azd provision` again — you added no new Azure resources (`resources:` is still `[]`), so the infrastructure from earlier steps is unchanged. The re-init just refreshes the copied code + manifest, and then `azd deploy` ships the new container version.
-
-> Prefer not to re-init? You can instead copy your edited `travel_assistant/main.py` (and the updated YAML) into the code directory inside `${WORKSHOP_RESOURCE_PREFIX}-travel-buddy/` and skip straight to `azd deploy`. Re-init is the reliable path because it also picks up the manifest changes and can't drift out of sync.
-
-1. **Re-init from the repository root.** Load your `.env` into the shell first — the repo `.env` isn't auto-loaded, and the shell needs `WORKSHOP_RESOURCE_PREFIX` to expand `--agent-name` (and to `cd` into the folder later):
-
-   <!-- terminal -->
    ```bash
    # bash / zsh
-   set -a; source .env; set +a
-   azd ai agent init -m travel_assistant/agent.manifest.yaml \
-     --agent-name "${WORKSHOP_RESOURCE_PREFIX}-travel-buddy"
+   cp .env.example .env
    ```
 
-   <!-- terminal -->
    ```powershell
    # PowerShell
-   Get-Content .env | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object {
-     $name, $value = $_ -split '=', 2
-     Set-Item "Env:$($name.Trim())" $value.Trim()
-   }
-   azd ai agent init -m travel_assistant/agent.manifest.yaml `
-     --agent-name "$($env:WORKSHOP_RESOURCE_PREFIX)-travel-buddy"
+   Copy-Item .env.example .env
    ```
 
-   This refreshes the `${WORKSHOP_RESOURCE_PREFIX}-travel-buddy/` folder with your updated `main.py` and the updated manifest metadata (including the new MCP environment variables).
+   Then edit `.env`:
+   - `AZURE_AI_PROJECT_ENDPOINT` — from your Foundry project's overview page.
+   - `AZURE_AI_MODEL_DEPLOYMENT_NAME` — your deployment name, for example `gpt-4o-mini`.
+   - `WORKSHOP_RESOURCE_PREFIX` — this prefixes **every** Azure/Foundry resource the workshop creates (and is how `.workshop/scripts/cleanup.py` finds them later). If you're working solo in your own subscription, leave the default `foundry-workshop`. But if you **share the Foundry project or subscription** with other people running this workshop, change it to a value unique to you (for example `foundry-workshop-<your-alias>`) so your resource names don't **collide** with a teammate's — otherwise provisioning can fail on name conflicts, and cleanup could delete each other's resources.
+   - Leave step-specific variables empty for now; the README will tell you when to fill them.
+5. **Install dependencies** (use the option that matches your venv choice above):
 
-2. **`cd` into the project folder and add the new MCP values to the azd env.** azd keeps its **own** environment store (`.azure/<env-name>/.env`), separate from the repo `.env`. The Foundry values (`AZURE_AI_PROJECT_ENDPOINT`, `AZURE_AI_MODEL_DEPLOYMENT_NAME`, `WORKSHOP_RESOURCE_PREFIX`) are already in the azd env from earlier steps, so you only need to set the **two new** MCP variables. Keep `.env` loaded in the shell so you can pass the values through:
-
-   <!-- terminal -->
+   **Option A — `pip`**
    ```bash
-   # bash / zsh — after: set -a; source .env; set +a
-   cd "${WORKSHOP_RESOURCE_PREFIX}-travel-buddy"
-   azd env set MCP_SERVER_LABEL "$MCP_SERVER_LABEL"
-   azd env set MCP_SERVER_URL "$MCP_SERVER_URL"
+   pip install -r travel_assistant/requirements.txt
+   pip install -r .workshop/scripts/requirements.txt
    ```
 
-   <!-- terminal -->
-   ```powershell
-   # PowerShell — after loading .env into the shell
-   cd "$($env:WORKSHOP_RESOURCE_PREFIX)-travel-buddy"
-   azd env set MCP_SERVER_LABEL "$env:MCP_SERVER_LABEL"
-   azd env set MCP_SERVER_URL "$env:MCP_SERVER_URL"
-   ```
-
-3. **Run TravelBuddy locally** in the hosted Responses runtime:
-
-   <!-- terminal -->
+   **Option B — `uv pip`**
    ```bash
-   azd ai agent run
+   uv pip install -r travel_assistant/requirements.txt
+   uv pip install -r .workshop/scripts/requirements.txt
    ```
-
-   `azd` reads `agent.yaml`, substitutes values from your azd environment, and starts the server on `http://localhost:8088` — now with your three function tools **and** the OctoTrip Flights MCP connection loaded. Leave this terminal running.
-
-4. **Invoke the local agent from a second terminal.** The `azd ai agent run` process is still holding the first terminal, so open a **new** one (in the same project folder) and ask a question that forces a flight search:
-
-   <!-- terminal -->
+6. **Run preflight**:
    ```bash
-   azd ai agent invoke --local "Find flights from Seattle (SEA) to Tokyo (NRT). List a few options with airline, price, and times."
+   # If you activated .venv
+   python .workshop/scripts/preflight.py
+
+   # If you're using uv without activation
+   uv run python .workshop/scripts/preflight.py
    ```
+   Fix any ❌. ⚠️ items are usually safe to ignore until later steps.
 
-   Expected: TravelBuddy calls the OctoTrip Flights MCP server and answers with real flight options — not just generic advice. The exact flights and prices change as the live server updates.
+## How the workshop works
 
-   Prefer a UI? With the local agent still running, open the **Agent Inspector** from the Foundry Toolkit (Command Palette → **Foundry Toolkit: Open Agent Inspector**). It connects to `http://localhost:8088` and shows each streamed MCP tool call and result.
+This workshop has one important contract: **`README.md` is the current step**. Each time you advance, the repository rewrites `README.md` so the next set of instructions appears in place.
 
-5. **Deploy to Foundry**:
+- **Leaving Setup (this step):** click the **▶ Start the workshop** button at the bottom. It opens the workshop's GitHub Action — click **Run workflow**, and it moves you from Setup to Step 1.
+- **Every step after that:** there is no button. When you finish a step, **commit the files you created and push them to `main`**. The push triggers the **Advance workshop on push to main** Action, which loads the next step. Each landed push advances by exactly **one** step, so push once — when the step is done.
+- After the Action finishes, run **`git pull`** locally. If you are reading in the GitHub UI, refresh the page to see the new `README.md`.
+- Advancing lays the next step's canonical files **on top of** your `travel_assistant/` directory. Files from earlier steps that the next step doesn't touch are kept as-is — nothing is deleted. Files the next step ships are refreshed to that step's version, and your current edits are first saved to `.workshop_instance/workshop_backups/step-<N>/` in the same commit so you can recover your own wording.
 
-   <!-- terminal -->
-   ```bash
-   azd deploy
-   ```
+## What you'll build
 
-   This builds the container image from the **refreshed** project-folder snapshot — now including the MCP tool registration and env vars — pushes it to your Azure Container Registry, and rolls out a new hosted agent version. No `azd provision` is needed because the infrastructure is unchanged.
+- Step 1: Chat with a basic hosted `TravelBuddy` agent.
+- Step 2: Add function tools for weather, local time, and currency conversion.
+- Step 3: Connect an MCP server for external travel documentation.
+- Step 4: Use Foundry tools such as Code Interpreter and web search for itinerary analysis.
+- Step 5: Ground recommendations with a destinations knowledge base through RAG.
+- Step 6: Package reusable itinerary behavior as a skill.
+- Step 7: Coordinate flight, hotel, and activities specialists with native multi-agent patterns.
+- Step 8 (🧪 experimental): Re-express the same planning flow as a durable workflow with checkpoints.
+- Step 9 (🧪 experimental): Remember user preferences across sessions with Foundry Memory.
 
-6. **Invoke the deployed agent**:
+## When you're ready
 
-   <!-- terminal -->
-   ```bash
-   azd ai agent invoke "Find flights from Seattle (SEA) to Tokyo (NRT)."
-   ```
+Make sure `python .workshop/scripts/preflight.py` is green (or `uv run python .workshop/scripts/preflight.py` if you're using `uv` without activation), then click the button below to open the workflow — and click **Run workflow** in the dialog that appears:
 
-   Prefer a UI? Open the **Hosted Agent Playground** from the Foundry Toolkit (**Developer Tools** → **Build** → **Hosted Agent Playground**), pick your deployed agent and version, and watch the MCP tool calls in the session details.
+[![▶ Start the workshop](https://img.shields.io/badge/%E2%96%B6_Start_the_workshop-Step_01-2ea44f?style=for-the-badge)](https://github.com/radustoica/ms-foundry-workshop/actions/workflows/start-workshop.yml)
 
-## Try it
+Click **Run workflow** to move from Setup to Step 1. Pull after the action completes. From Step 1 onward you advance by committing your work and pushing to `main` — there is no button. With setup already done, Step 1 jumps straight into authoring `agent.yaml`, `agent.manifest.yaml`, and `main.py` for your first hosted TravelBuddy agent.
 
-Try prompts that make the tool choice obvious.
+## Working fully locally (no GitHub Actions)
 
-- "Find me flights from London (LHR) to New York (JFK)."
+You can run the entire workshop loop from your terminal — no browser, no Actions, no `git push` required. Pick whichever flow you prefer; both keep the repository in the same state.
 
-Now try a **mixed** prompt that should use both a local function tool and MCP in one conversation:
+The button in each step's README is just a thin wrapper around `.workshop/scripts/advance_step.py`. Running the script locally does exactly the same file rewrites.
 
-- "What's the weather in Reykjavik right now, and can you find flights from Reykjavik (KEF) to Copenhagen (CPH)?"
+**Advance one step:**
 
-The weather portion should use the Step 2 `get_weather` function tool; the flight portion should use OctoTrip Flights MCP. That's the key lesson: local function tools and remote MCP tools are both just tools from the model's point of view, and it routes each part of the question to the right one.
+```bash
+python .workshop/scripts/advance_step.py --expected-current-step <N> --auto-commit
+```
+
+Where `<N>` is the step number you're currently on (the value the button asks for). You can omit `--expected-current-step` locally if you trust the state — the script will print the detected step and advance anyway. The `--auto-commit` flag stages **only** the workshop-owned paths (`README.md`, `.workshop_instance/.workshop-state.json`, `travel_assistant/`, `.workshop_instance/workshop_backups/`) and creates a commit with the same message the Action uses, so unrelated local edits or untracked files are never swept in.
+
+**Reset the workshop:**
+
+```bash
+python .workshop/scripts/advance_step.py --reset --auto-commit
+```
+
+Your previous `travel_assistant/` is preserved under `.workshop_instance/workshop_backups/reset-<timestamp>/`.
+
+**Move back one step:**
+
+```bash
+python .workshop/scripts/advance_step.py --back --auto-commit
+```
+
+Advancing has no built-in undo when you work locally without committing each step, so this is how you step back. It restores your saved work from `.workshop_instance/workshop_backups/step-<N>/` (the snapshot advance takes before leaving a step); if that snapshot is missing it rebuilds the canonical step files instead and warns you. Your current work is always backed up to `.workshop_instance/workshop_backups/back-<timestamp>/` first, and it errors at step 0.
+
+**Pull the latest workshop machinery (without advancing):**
+
+```bash
+python .workshop/scripts/sync_template.py --auto-commit   # add --push to push too
+```
+
+Occasionally the upstream template ships fixes to the workshop machinery (the authoring material under `.workshop/` and the GitHub configuration under `.github/`). This pulls those into your instance **without moving to the next step** and without touching your `travel_assistant/`, your `.workshop_instance/` state, `README.md`, or `.env`. The commit carries a `[skip-advance]` marker, so pushing it never advances you. A local run also refreshes `.github/workflows/`; the automated CI sync deliberately skips workflow files so it stays tokenless (no Personal Access Token required).
+
+**Reset the current step (re-lay its clean starter files):**
+
+```bash
+python .workshop/scripts/advance_step.py --reset-current --auto-commit
+```
+
+Re-lays the **current** step's clean starter files and re-renders its `README.md`, staying on the current step — unlike `--reset`, which returns you to step 0. Your previous `travel_assistant/` is backed up under `.workshop_instance/workshop_backups/reset-current-<step>-<timestamp>/` first. Pair it with a sync when you want the current step's delivery refreshed too: **sync first, then reset the current step**. (If you sync just before advancing, you don't need this — advancing already lays down fresh files.)
+
+**Re-run preflight:**
+
+```bash
+# If you activated .venv
+python .workshop/scripts/preflight.py
+
+# If you're using uv without activation
+uv run python .workshop/scripts/preflight.py
+```
+
+**Shortcuts (optional):** the repo ships a `Makefile` with these aliases:
+
+```bash
+make advance        # advance to the next step (auto-commits workshop paths)
+make back           # move back one step (auto-commits workshop paths)
+make reset          # reset to step 0 (auto-commits workshop paths)
+make reset-current  # re-lay the current step's clean files (auto-commits)
+make preflight      # run environment checks
+make sync-template  # pull latest .workshop/ + .github/ from the template
+```
+
+When `make` is not available (e.g. on a clean Windows install), just run the equivalent `python .workshop/scripts/...` commands above.
+
+**When the button and the local flow are interchangeable.** Both write the same files. You can switch back and forth between clicking the button and running the script across steps without breaking anything — the script's state-sync check will catch any genuine drift before it advances.
 
 ## Troubleshooting
 
-### MCP server unreachable
+### "Workflow cannot push to main"
 
-Check the URL in `.env`.
+A branch protection rule is blocking `GITHUB_TOKEN` from pushing the README update. Fix the rule in **Settings → Branches**, or allow the workflow/bot account to bypass the rule for this workshop repository.
 
-```env
-# .env
-MCP_SERVER_URL=https://mcp.octotrip.app/flights/mcp
-```
+### "▶ Start the workshop" returns 404 (URL contains `%7B%7B`)
 
-The OctoTrip Flights MCP is public and anonymous, but it's rate-limited (roughly one request per second). If calls fail intermittently, space out your prompts and retry. If the endpoint is temporarily unavailable, try again later — or switch to the mock below.
+This means the **Initialize workshop** Action hasn't run yet in your repo, so the button's URL still contains URL-encoded handlebars (`%7B%7B...%7D%7D`) where your repo owner and name should appear. To recover:
 
-### Use the mock when OctoTrip is unavailable
+1. Confirm Actions are enabled: **Settings → Actions → General → Allow all actions**.
+2. Confirm workflows can write: **Settings → Actions → General → Workflow permissions → Read and write permissions**.
+3. Open the **Actions** tab, choose **Initialize workshop**, click **Run workflow** on the default branch.
+4. Wait for the run to finish, then `git pull` locally (or refresh the GitHub UI). The button URL will now contain your real owner/repo and work on the first click.
 
-This repo ships a stand-in that speaks the same MCP protocol and exposes the same `search` tool, but **generates every offer from your request** instead of calling a live service: [`.workshop/mocks/octotrip_flights_mcp/`](.workshop/mocks/octotrip_flights_mcp/). Real airport coordinates give it believable durations, connections, and local arrival times, and the same request always returns the same offers — handy for a demo. Nothing it returns is real: the airlines are invented and every payload is marked `"mock": true`.
+If you advanced past step 0 already and only just hit this, the **Start the workshop** Action also self-heals — running it from the Actions tab will perform the missed initialization in the same commit.
 
-Run it locally with no dependencies:
+### "Actions are disabled"
+
+Enable Actions in **Settings → Actions → General → Allow all actions**.
+
+### "Third-party actions blocked"
+
+This workshop does not use marketplace actions for advancing steps; it uses the repo's workflow plus plain `git push`. If your organization shows this warning, no third-party action exception is needed for the workshop advance flow.
+
+### "My push didn't advance the step"
+
+Auto-advance only runs for pushes to `main` in your own (non-template) repo, and it skips a few kinds of push that aren't step progress: pushes that only changed workshop bookkeeping such as `.workshop_instance/.workshop-state.json`, pushes whose commit carries a `[skip-advance]` marker (what a template sync adds), and pushes that changed **only** workshop machinery or platform files (`.github/`, `.workshop/`, `Makefile`, `.devcontainer/`, `README.md`, …) and never your delivery (`travel_assistant/` or its sibling folders like `travel_toolbox/`). That last case means you can pull the latest machinery from upstream and push it — even manually, without the `[skip-advance]` marker — without being bumped to the next step. Check the **Actions** tab for the **Advance workshop on push to main** run. If it was skipped, make sure your push touched a delivery file and that the previous advance already finished. If several quick pushes collapsed into a single advance, that's expected — each *landed* push advances one step.
+
+### "Codespace can't reach my Foundry project"
+
+`DefaultAzureCredential` may pick up the Codespace's GitHub token before your Azure CLI identity. Add `AZURE_TENANT_ID` to your environment, or run this in the Codespace terminal:
 
 ```bash
-make mock-mcp   # or: python .workshop/mocks/octotrip_flights_mcp/serve_local.py
+az login --use-device-code
 ```
 
-That's enough for any MCP client on your machine, but **not** for your agent: `client.get_mcp_tool(...)` registers a *hosted* MCP tool, so Foundry calls the URL from its own network and never reaches your `localhost`. Give it a public URL instead.
+### "My edits are gone after advancing"
 
-The quick way, and the usual inner-loop pattern — keep the server local, tunnel it out with the [dev tunnel CLI](https://learn.microsoft.com/azure/developer/dev-tunnels/get-started):
+They were backed up to `.workshop_instance/workshop_backups/step-<previous>/` in the same commit that advanced the workshop. Cherry-pick or copy back anything you want to keep.
 
-```bash
-devtunnel user login
-devtunnel host --port-number 8931 --allow-anonymous
-```
+## Cleanup
 
-`--allow-anonymous` is required — Foundry sends no tunnel token, and a protected tunnel just answers 401. Don't name the tunnel: `devtunnel create <id>` needs a **globally unique** ID, so a shared name fails for everyone after the first person. `devtunnel host` prints the public URL; keep it running while you work. In a Codespace, forwarding port 8931 as **Public** does the same job.
-
-For something that outlives your terminal, deploy it: the same folder is an Azure Functions app with anonymous access, and its [README](.workshop/mocks/octotrip_flights_mcp/README.md) has the `az` commands.
-
-Either way, append `/mcp` to the URL. Only `MCP_SERVER_URL` changes — leave `MCP_SERVER_LABEL` alone — and set it in both places, `.env` and the azd environment:
-
-```env
-# .env
-MCP_SERVER_URL=https://<generated-id>-8931.<region>.devtunnels.ms/mcp
-```
-
-<!-- terminal -->
-```bash
-cd "${WORKSHOP_RESOURCE_PREFIX}-travel-buddy"
-azd env set MCP_SERVER_URL "$MCP_SERVER_URL"
-```
-
-Skipping the `azd env set` is the usual reason the agent keeps calling the real server: `azd` reads its own environment, not the repo's `.env`. Restart `azd ai agent run` afterwards. A temporary tunnel gets a new URL each time you host it, so redo that command whenever you restart it.
-
-> **`--allow-anonymous` is safe for this mock only.** It publishes an endpoint that authenticates nobody, which is fine here because the mock holds no data, has no managed identity, and invents every answer — there is nothing for a stranger to read or borrow. Don't reuse the flag for a server that fronts real data. In [Step 5](.workshop/docs/steps/05-rag.md) your Search MCP holds `Search Index Data Reader` over your destinations index; exposing *that* anonymously would publish read access to every document in it, to anyone with the URL, with no sign-in and no audit trail. A retrieval endpoint authenticates its callers with Entra ID — tunnelled or deployed.
-
-Switch back to `https://mcp.octotrip.app/flights/mcp` once the real server answers again.
-
-### No MCP tools listed
-
-Confirm the two settings are in **both** `.env` and the manifest, and that `main.py` actually appends `client.get_mcp_tool(...)` to the `tools` list passed to `Agent`.
-
-Common mistakes:
-
-- putting `environment_variables` under `resources` instead of `template`;
-- using `environmentVariables` instead of `environment_variables`;
-- adding `MCP_SERVER_LABEL` / `MCP_SERVER_URL` to `.env` but not to the manifest;
-- forgetting to restart the agent (or re-run `azd ai agent init`) after editing `.env` or the manifest.
-
-### The local function tools stopped working
-
-The final `tools` list should contain **four** entries: the three function tools from Step 2 (`get_weather`, `get_local_time`, `convert_currency`) plus the MCP tool from this step. If you replaced the whole list with only the MCP tool, restore the function tools and run again.
-
-### Auth error against the MCP server
-
-OctoTrip Flights MCP is anonymous, so an auth error usually means you changed `MCP_SERVER_URL` to a server that requires a token. For an authenticated MCP server, follow the upstream `03-mcp` auth pattern: read a token from the environment and pass an `Authorization` header to `client.get_mcp_tool(...)`.
-
-```python
-# travel_assistant/main.py
-token = os.environ["MCP_SERVER_TOKEN"]
-mcp_tool = client.get_mcp_tool(
-    name=os.environ["MCP_SERVER_LABEL"],
-    url=os.environ["MCP_SERVER_URL"],
-    headers={"Authorization": f"Bearer {token}"},
-    approval_mode="never_require",
-)
-```
-
-Do not commit tokens to `.env.example`, `agent.manifest.yaml`, or source control. Use your local `.env` or the deployment environment's secret store.
-
-### The agent answers without searching flights
-
-Make the prompt explicit: give an origin, a destination (IATA codes work well), and a departure date, and ask for flight options. MCP gives the model access to live flight search, but the model still chooses whether to call it. Strong prompts make the desired tool use clear while you're testing.
-
-### Deploy didn't pick up my MCP change
-
-`azd ai agent init` **copied** your code into the `${WORKSHOP_RESOURCE_PREFIX}-travel-buddy/` project folder, so edits in `travel_assistant/` don't deploy on their own. Re-run `azd ai agent init` (step 1 above) to refresh that snapshot — or copy your edited files into the folder's code directory — then `azd deploy` again.
+When you finish, or if you want to abandon the workshop, step 99 runs `python .workshop/scripts/cleanup.py --apply` to delete all workshop-created Azure resources. The script only touches resources whose names start with `WORKSHOP_RESOURCE_PREFIX`. If you used `azd` to provision hosted-agent resources, you can alternatively run `azd down` to tear down the resources `azd` created.
 
 ## Solution
 
-> If you get stuck: [`.workshop/solutions/03-mcp/`](.workshop/solutions/03-mcp/)
-
-## Upstream sample
-
-> Based on the upstream [`03-mcp`](https://github.com/microsoft-foundry/foundry-samples/tree/main/samples/python/hosted-agents/agent-framework/responses/03-mcp) sample.
+This step has no code to write — it's intro and setup of your repo from the template.
 
 
 ---
 
-<!-- workshop-footer: push-to-advance -->
+<!-- workshop-footer: start-workshop -->
 <a id="advance"></a>
 
-## ✅ Done with this step? Push to advance.
+[![▶ Start the workshop](https://img.shields.io/badge/%E2%96%B6_Start_the_workshop-Step_01-2ea44f?style=for-the-badge)](https://github.com/radustoica/ms-foundry-workshop/actions/workflows/start-workshop.yml)
 
-**Next:** Step 04 — Foundry Toolbox
+**Next:** Step 01 — Basic hosted agent
 
-Commit the files you created or edited in this step and push them to `main`. The push automatically loads Step 04 — there is no button to click.
+Click the badge to open **Start the workshop**, then click **Run workflow**. It moves you from Setup to Step 01. Pull after the action completes.
 
-```bash
-git add -A
-git commit -m "Complete step 3"
-git push
-```
+Or open **Actions → Start the workshop → Run workflow** manually.
 
-After the **Advance workshop on push to main** Action finishes, run **`git pull`** to refresh your `README.md` and the next step's files. If you're reading on GitHub, refresh the page.
+From Step 01 onward you don't click a button to advance — you just **commit your work and push to `main`**, and the next step loads automatically.
 
-> Each push to `main` advances the workshop by exactly **one** step, so push once — when this step is done.
+> 💡 **Button returns 404?** Your repo's one-time **Initialize workshop** Action hasn't run yet. Open the **Actions** tab, run **Initialize workshop → Run workflow**, then refresh this page.
 
-> **Prefer to stay local?** Run `python .workshop/scripts/advance_step.py --expected-current-step 3 --auto-commit` (or `make advance`) instead. That advances locally and records it in the same commit, so your next push won't advance again. See [Working fully locally](.workshop/docs/steps/00-intro.md#5-working-fully-locally-no-github-actions).
+> **Prefer to stay local?** Run `python .workshop/scripts/advance_step.py --expected-current-step 0 --auto-commit` (or `make advance`) instead of clicking the button. See [Working fully locally](.workshop/docs/steps/00-intro.md#5-working-fully-locally-no-github-actions) for the full local flow.
 
-<sub>Made a mistake on this step? Re-lay its clean starter files with the [Reset current step](https://github.com/radustoica/ms-foundry-workshop/actions/workflows/reset-current-step.yml) workflow, or run `python .workshop/scripts/advance_step.py --reset-current --auto-commit` locally — you stay on this step. To start the whole workshop over instead, use [Reset workshop](https://github.com/radustoica/ms-foundry-workshop/actions/workflows/reset-workshop.yml) or `python .workshop/scripts/advance_step.py --reset --auto-commit`.</sub>
-
-<sub>Advanced too far? Use the [Go back one step](https://github.com/radustoica/ms-foundry-workshop/actions/workflows/back-workshop.yml) workflow, or run `python .workshop/scripts/advance_step.py --back --auto-commit` locally.</sub>
+<sub>Made a mistake? Use the [Reset workshop](https://github.com/radustoica/ms-foundry-workshop/actions/workflows/reset-workshop.yml) workflow, or run `python .workshop/scripts/advance_step.py --reset --auto-commit` locally.</sub>
